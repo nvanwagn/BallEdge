@@ -1,0 +1,21 @@
+{
+  "name": "balledge",
+  "version": "1.0.0",
+  "description": "BallEdge — NFL & NBA statistics articles",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js",
+    "reset-password": "node --no-warnings scripts/reset-password.js"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "highlight.js": "^11.12.0",
+    "multer": "^2.5.0",
+    "sanitize-html": "^2.18.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  }
+}
