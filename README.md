@@ -66,7 +66,8 @@ The app needs a host with a **persistent disk** so the database and images survi
 | Host                     | Setup                                                                                                         |
 |--------------------------|---------------------------------------------------------------------------------------------------------------|
 | **Render**               | Web Service. Build: `npm install`. Start: `npm start`. Add a Disk at `/var/data` and set `DATA_DIR=/var/data` |
-| **Railway / Fly.io**     | Add a volume and point `DATA_DIR` at it                                                                       |
+| **Railway**              | Deploys from the Dockerfile (`railway.json`). Attach a Volume to the service; the app finds it automatically  |
+| **Fly.io**               | Add a volume and point `DATA_DIR` at it                                                                       |
 | **VPS**                  | Run with `pm2` or systemd behind Nginx/Caddy with HTTPS                                                       |
 | **Docker**               | See below                                                                                                     |
 
@@ -83,6 +84,17 @@ Always serve over **HTTPS** in production. The session cookie is marked `Secure`
 - Previews only work once the site is at a public URL with `SITE_URL` set. X can't reach `localhost`.
 - Articles without a hero image fall back to `public/img/share-default.jpg`.
 - X caches previews for about a week, so a changed hero image may take time to update there.
+
+---
+
+## Backup & restore
+
+Signed in, open **Menu → Backup & Restore**.
+
+- **Download Backup** saves one `.tar.gz` with the database (articles, drafts, settings, author account) and every uploaded image. It's safe to run while the site is live.
+- **Restore Backup** replaces the site's articles, settings and author account with the backup's and adds its images. Everyone is signed out; sign back in with the backup's username and password. A safety copy of the site as it was is saved first in `data/backups/` (the newest 3 are kept).
+
+To move a local site to a host: download a backup on `localhost`, sign in on the new site (create a temporary account at `/setup` if it's empty), and restore it there.
 
 ---
 

@@ -3,7 +3,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
-ENV NODE_ENV=production DATA_DIR=/app/data
-VOLUME /app/data
+ENV NODE_ENV=production
+# Data (database + uploads) goes in DATA_DIR, or the Railway volume, or /app/data.
+# Mount persistent storage there; no VOLUME line because Railway rejects it.
 EXPOSE 3000
-CMD ["npm", "start"]
+# Run node directly so it receives SIGTERM and can close the database cleanly.
+CMD ["node", "--no-warnings", "server.js"]

@@ -22,6 +22,7 @@ function layout({ title, ogTitle, body, user, description = TAGLINE, bodyClass =
        <li><a href="/admin">My Articles</a></li>
        <li><a href="/admin/about">Edit About Page</a></li>
        <li><a href="/admin/account">Account</a></li>
+       <li><a href="/admin/backup">Backup &amp; Restore</a></li>
        <li><form method="post" action="/logout"><button type="submit" class="linklike">Sign Out</button></form></li>`
     : `<li class="menu-signin"><a href="/login">Author Sign In</a></li>`;
 
@@ -282,9 +283,10 @@ function authCard({ heading, sub, error, fields, button, action, user, foot = ''
 const field = (name, label, type = 'text', value = '', extra = '') =>
   `<label class="field"><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
 
-function loginPage({ error, next = '/', username = '' }) {
+function loginPage({ error, next = '/', username = '', notice = '' }) {
   return authCard({
     heading: 'Author Sign In', error, button: 'Sign In', action: `/login?next=${encodeURIComponent(next)}`,
+    sub: notice ? `<span class="form-ok">${esc(notice)}</span>` : '',
     fields: field('username', 'Username', 'text', username, 'autocomplete="username" required autofocus') +
       field('password', 'Password', 'password', '', 'autocomplete="current-password" required'),
   });
@@ -310,6 +312,31 @@ function accountPage({ user, error, notice, displayName }) {
       field('current', 'Current password (required to change password)', 'password', '', 'autocomplete="current-password"') +
       field('password', 'New password', 'password', '', 'autocomplete="new-password" minlength="10"') +
       field('password2', 'Confirm new password', 'password', '', 'autocomplete="new-password" minlength="10"'),
+  });
+}
+
+function backupPage({ user, error }) {
+  return layout({
+    user, title: 'Backup & Restore', bodyClass: 'auth-page',
+    body: `<section class="auth-card">
+      <h1 class="display small">Backup &amp; Restore</h1>
+      ${error ? `<p class="form-error" role="alert">${esc(error)}</p>` : ''}
+      <h2>Download a backup</h2>
+      <p class="muted">One file with every article, draft, setting, your author account and all images.</p>
+      <a class="btn btn-dark btn-block" href="/admin/backup/download">Download Backup</a>
+      <h2 style="margin-top:2rem">Restore a backup</h2>
+      <p class="muted"><strong>This replaces every article, draft, setting and the author account on this site</strong>
+        with the ones in the backup, and adds its images. You'll be signed out; sign back in with the backup's username and password.
+        A safety copy of the current site is saved on the server first.</p>
+      <form method="post" action="/admin/backup/restore" enctype="multipart/form-data" class="stack-form" id="restoreForm">
+        <label class="field"><span>Backup file (.tar.gz)</span><input name="backup" type="file" accept=".gz,.tgz,.tar" required></label>
+        ${field('confirm', 'Type RESTORE to confirm', 'text', '', 'required autocomplete="off" pattern="[Rr][Ee][Ss][Tt][Oo][Rr][Ee]"')}
+        <button class="btn btn-gold btn-block" type="submit">Restore Backup</button>
+      </form>
+      <script>document.getElementById('restoreForm').addEventListener('submit', function (e) {
+        var b = this.querySelector('button'); b.disabled = true; b.textContent = 'Restoring… this can take a minute';
+      });</script>
+    </section>`,
   });
 }
 
@@ -422,4 +449,4 @@ function notFound({ user }) {
   });
 }
 
-module.exports = { layout, home, sectionPage, articlePage, aboutPage, loginPage, setupPage, accountPage, dashboard, editorPage, notFound };
+module.exports = { layout, home, sectionPage, articlePage, aboutPage, loginPage, setupPage, accountPage, backupPage, dashboard, editorPage, notFound };

@@ -8,6 +8,7 @@ const multer = require('multer');
 
 const { db, UPLOAD_DIR, getSetting, setSetting } = require('./src/db');
 const auth = require('./src/auth');
+const backup = require('./src/backup');
 const C = require('./src/content');
 const V = require('./src/views');
 
@@ -22,6 +23,9 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   next();
 });
+// Health check for the host (Railway pings this before switching traffic to a new deploy).
+app.get('/healthz', (req, res) => { db.prepare('SELECT 1').get(); res.type('text').send('ok'); });
+
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }));
 app.use(express.urlencoded({ extended: false, limit: '100kb' }));
@@ -93,7 +97,8 @@ const safeNext = (n) => (typeof n === 'string' && n.startsWith('/') && !n.starts
 app.get('/login', (req, res) => {
   if (auth.userCount() === 0) return res.redirect('/setup');
   if (req.user) return res.redirect(safeNext(req.query.next));
-  send(res, V.loginPage({ next: safeNext(req.query.next) }));
+  const notice = req.query.restored ? 'Backup restored. Sign in with the username and password from the backup.' : '';
+  send(res, V.loginPage({ next: safeNext(req.query.next), notice }));
 });
 
 app.post('/login', (req, res) => {
@@ -161,6 +166,40 @@ app.post('/admin/account', auth.requireAuth, (req, res) => {
   db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(display_name.trim(), req.user.id);
   req.user.displayName = display_name.trim();
   page('', password ? 'Saved. Your password was changed.' : 'Saved.');
+});
+
+/* ------------------------------ Backup & restore ------------------------------ */
+backup.cleanTmp();
+const restoreUpload = multer({ dest: backup.TMP_DIR, limits: { fileSize: 2 * 1024 ** 3, files: 1 } });
+
+app.get('/admin/backup', auth.requireAuth, (req, res) => send(res, V.backupPage({ user: req.user })));
+
+app.get('/admin/backup/download', auth.requireAuth, async (req, res, next) => {
+  let file;
+  try {
+    file = await backup.backupForDownload();
+  } catch (err) { return next(err); }
+  const day = new Date().toISOString().slice(0, 10);
+  res.download(file, `balledge-backup-${day}.tar.gz`, () => fs.rm(file, { force: true }, () => {}));
+});
+
+app.post('/admin/backup/restore', auth.requireAuth, (req, res) => {
+  const page = (error) => send(res, V.backupPage({ user: req.user, error }), 400);
+  restoreUpload.single('backup')(req, res, async (err) => {
+    const file = req.file && req.file.path;
+    const cleanup = () => file && fs.rm(file, { force: true }, () => {});
+    if (err) { cleanup(); return page(err.code === 'LIMIT_FILE_SIZE' ? 'That file is larger than 2 GB.' : 'Upload failed. Please try again.'); }
+    if (!file) return page('Choose a backup file to restore.');
+    if (String(req.body.confirm || '').trim().toUpperCase() !== 'RESTORE') { cleanup(); return page('Type RESTORE in the box to confirm.'); }
+    try {
+      const result = await backup.restoreBackup(file);
+      console.log(`Restored backup: ${result.articles} articles, ${result.images} images`);
+      res.redirect('/login?restored=1');
+    } catch (e) {
+      console.error(e);
+      page(e.message || 'Restore failed. Nothing was changed.');
+    } finally { cleanup(); }
+  });
 });
 
 /* ------------------------------ Image uploads ------------------------------ */
@@ -271,4 +310,19 @@ app.use((err, req, res, next) => {
 // Clean out expired sessions once a day.
 setInterval(() => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()), 864e5).unref();
 
-app.listen(PORT, () => console.log(`BallEdge running at http://localhost:${PORT}`));
+const server = app.listen(PORT, () => console.log(`BallEdge running at http://localhost:${PORT}`));
+
+// Hosts like Railway send SIGTERM on every redeploy. Finish in-flight requests and
+// close the database so its write-ahead log is folded back into balledge.db.
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received, shutting down`);
+  const finish = () => { try { db.close(); } catch {} process.exit(0); };
+  server.close(finish);
+  server.closeIdleConnections?.();
+  setTimeout(finish, 10000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
