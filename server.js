@@ -9,6 +9,7 @@ const multer = require('multer');
 const { db, UPLOAD_DIR, getSetting, setSetting } = require('./src/db');
 const auth = require('./src/auth');
 const backup = require('./src/backup');
+const news = require('./src/newsletter');
 const C = require('./src/content');
 const V = require('./src/views');
 
@@ -91,6 +92,46 @@ app.get('/about', (req, res) => {
   send(res, V.aboutPage({ about: { ...a, bodyHtml: C.renderBody(a.body) }, user: req.user }));
 });
 
+/* ------------------------------ Email subscriptions ------------------------------ */
+const notice = (res, heading, message, status = 200) => send(res, V.noticePage({ heading, message }), status);
+
+app.post('/subscribe', async (req, res) => {
+  if (req.body.website) return notice(res, 'Almost there', 'Check your inbox for a confirmation link.');   // honeypot: bots fill it in
+  if (!news.signupAllowed(req.ip)) return notice(res, 'Slow down a little', 'Too many signups from your connection. Try again in an hour.', 429);
+  const result = await news.subscribe(req.body.email, siteUrl(req));
+  if (result.error) return notice(res, 'Couldn\'t sign you up', result.error, 400);
+  notice(res, 'Almost there', 'Check your inbox for an email from BallEdge and click the link to confirm. If it isn\'t there in a few minutes, look in spam or promotions.');
+});
+
+app.get('/subscribe/confirm', (req, res) => {
+  const sub = news.confirm(req.query.token);
+  if (!sub) return notice(res, 'Link not recognized', 'That confirmation link is invalid or has been replaced by a newer one. Sign up again at the bottom of any page.', 404);
+  notice(res, 'You\'re subscribed', `New articles will be emailed to ${sub.email}. Every email has an unsubscribe link.`);
+});
+
+// GET shows a button instead of unsubscribing right away: email scanners open links automatically.
+app.get('/unsubscribe', (req, res) => {
+  const sub = news.findByToken(req.query.token);
+  if (!sub) return notice(res, 'Link not recognized', 'That unsubscribe link is invalid. If you keep getting emails, reply to one and we\'ll remove you.', 404);
+  send(res, V.unsubscribePage({ email: sub.email, token: req.query.token, done: sub.status === 'unsubscribed' }));
+});
+
+// Handles our page's button and mail apps' one-click unsubscribe (RFC 8058).
+app.post('/unsubscribe', (req, res) => {
+  const sub = news.unsubscribe(req.query.token || req.body.token);
+  if (!sub) return notice(res, 'Link not recognized', 'That unsubscribe link is invalid.', 404);
+  if (req.body['List-Unsubscribe'] === 'One-Click') return res.status(200).type('text').send('Unsubscribed');
+  send(res, V.unsubscribePage({ email: sub.email, token: sub.token, done: true }));
+});
+
+app.get('/admin/subscribers', auth.requireAuth, (req, res) =>
+  send(res, V.subscribersPage({ user: req.user, subscribers: news.list(), enabled: news.enabled() })));
+
+app.post('/admin/subscribers/:id/delete', auth.requireAuth, (req, res) => {
+  news.remove(Number(req.params.id));
+  res.redirect('/admin/subscribers');
+});
+
 /* ------------------------------ Auth ------------------------------ */
 const safeNext = (n) => (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') ? n : '/admin');
 
@@ -138,11 +179,13 @@ app.post('/setup', (req, res) => {
 
 /* ------------------------------ Author area ------------------------------ */
 app.get('/admin', auth.requireAuth, (req, res) => send(res, V.dashboard({ user: req.user, articles: Q.all.all() })));
-app.get('/admin/new', auth.requireAuth, (req, res) => send(res, V.editorPage({ user: req.user })));
+// How many subscribers the first Publish of this article will email (0 = no email).
+const notifyCount = (article) => (news.enabled() && !(article && article.published_at) ? news.activeCount() : 0);
+app.get('/admin/new', auth.requireAuth, (req, res) => send(res, V.editorPage({ user: req.user, notify: notifyCount() })));
 app.get('/admin/edit/:id', auth.requireAuth, (req, res) => {
   const article = Q.byId.get(Number(req.params.id));
   if (!article) return send(res, V.notFound({ user: req.user }), 404);
-  send(res, V.editorPage({ user: req.user, article }));
+  send(res, V.editorPage({ user: req.user, article, notify: notifyCount(article) }));
 });
 app.get('/admin/about', auth.requireAuth, (req, res) => {
   const a = getAbout();
@@ -268,6 +311,7 @@ app.post('/api/articles', auth.requireAuth, (req, res) => {
     uniqueSlug(title), title, input.dek, input.category, input.hero_image, input.share_image, input.hero_caption, input.body_html,
     input.status, req.user.id, now, now, input.status === 'published' ? now : null);
   const a = Q.byId.get(Number(info.lastInsertRowid));
+  if (a.status === 'published') news.notifyNewArticle(a, siteUrl(req)).catch((e) => console.error(e));
   res.json({ id: a.id, slug: a.slug, status: a.status });
 });
 
@@ -284,6 +328,8 @@ app.put('/api/articles/:id', auth.requireAuth, (req, res) => {
   const publishedAt = input.status === 'published' ? (existing.published_at || now) : existing.published_at;
   db.prepare(`UPDATE articles SET slug=?, title=?, dek=?, category=?, hero_image=?, share_image=?, hero_caption=?, body_html=?, status=?, updated_at=?, published_at=? WHERE id=?`)
     .run(slug, title, input.dek, input.category, input.hero_image, input.share_image, input.hero_caption, input.body_html, input.status, now, publishedAt, existing.id);
+  // First publish only: edits and unpublish/republish never email again.
+  if (input.status === 'published' && !existing.published_at) news.notifyNewArticle(Q.byId.get(existing.id), siteUrl(req)).catch((e) => console.error(e));
   res.json({ id: existing.id, slug, status: input.status });
 });
 

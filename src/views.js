@@ -1,5 +1,22 @@
 // Server-rendered pages. Every page shares layout(): header, left dropdown menu, footer.
 const { esc, excerpt, timeAgo, fullDate, longToday, readingTime, CATEGORIES } = require('./content');
+const news = require('./newsletter');
+
+// "Get new articles by email" form; hidden until email sending is configured.
+// The `website` field is a honeypot: people never see it, bots fill it in.
+function signupForm(variant, heading, sub) {
+  if (!news.enabled()) return '';
+  const id = `signup-${variant}`;
+  return `<form class="signup signup-${variant}" method="post" action="/subscribe">
+    <label class="signup-head" for="${id}">${heading}</label>
+    ${sub ? `<p class="signup-sub">${sub}</p>` : ''}
+    <div class="signup-row">
+      <input id="${id}" type="email" name="email" required maxlength="254" placeholder="you@example.com" autocomplete="email">
+      <button class="btn btn-gold" type="submit">Subscribe</button>
+    </div>
+    <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+  </form>`;
+}
 
 const SITE = 'BallEdge';
 const TAGLINE = 'Numbers behind the NFL & NBA';
@@ -22,6 +39,7 @@ function layout({ title, ogTitle, body, user, description = TAGLINE, bodyClass =
        <li><a href="/admin">My Articles</a></li>
        <li><a href="/admin/about">Edit About Page</a></li>
        <li><a href="/admin/account">Account</a></li>
+       <li><a href="/admin/subscribers">Subscribers</a></li>
        <li><a href="/admin/backup">Backup &amp; Restore</a></li>
        <li><form method="post" action="/logout"><button type="submit" class="linklike">Sign Out</button></form></li>`
     : `<li class="menu-signin"><a href="/login">Author Sign In</a></li>`;
@@ -77,6 +95,7 @@ ${body}
   <div class="footer-inner">
     <a class="footer-brand" href="/"><img src="/img/nameplate-gold.png" alt="${SITE}"></a>
     <p class="footer-tag">${TAGLINE}</p>
+    ${signupForm('footer', 'Get new articles by email', '')}
     <nav class="footer-links"><a href="/">Home</a><a href="/section/nfl">NFL</a><a href="/section/nba">NBA</a><a href="/about">About Me</a>${user ? '' : '<a href="/login">Sign In</a>'}</nav>
     <p class="footer-copy">© ${new Date().getFullYear()} ${SITE}. All rights reserved.</p>
   </div>
@@ -214,6 +233,7 @@ function articlePage({ article: a, author, bodyHtml, related, user, url, base })
           <img src="/img/logo.png" alt="">
           <div class="article-end-share"><span>Enjoyed this? Pass it on.</span>${shareMenu(url, a.title, 'bottom')}</div>
         </div>
+        ${draft ? '' : signupForm('article', 'Get the next one in your inbox', 'One email when a new article is published. No spam, unsubscribe anytime.')}
       </div>
 
     <aside class="article-rail">
@@ -315,6 +335,56 @@ function accountPage({ user, error, notice, displayName }) {
   });
 }
 
+/* ---------- Email subscription pages ---------- */
+function noticePage({ heading, message }) {
+  return layout({
+    title: heading, bodyClass: 'auth-page',
+    body: `<section class="auth-card">
+      <img src="/img/logo.png" alt="" class="auth-logo">
+      <h1 class="display small">${esc(heading)}</h1>
+      <p class="muted">${esc(message)}</p>
+      <a class="btn btn-dark btn-block" href="/">Back to BallEdge</a>
+    </section>`,
+  });
+}
+
+function unsubscribePage({ email, token, done }) {
+  return layout({
+    title: 'Unsubscribe', bodyClass: 'auth-page',
+    head: '<meta name="robots" content="noindex">',
+    body: `<section class="auth-card">
+      <img src="/img/logo.png" alt="" class="auth-logo">
+      <h1 class="display small">${done ? 'You\'re unsubscribed' : 'Unsubscribe?'}</h1>
+      ${done
+        ? `<p class="muted">${esc(email)} won't get any more emails from BallEdge.</p>
+           <a class="btn btn-dark btn-block" href="/">Back to BallEdge</a>`
+        : `<p class="muted">Stop new-article emails to ${esc(email)}?</p>
+           <form method="post" action="/unsubscribe" class="stack-form">
+             <input type="hidden" name="token" value="${esc(token)}">
+             <button class="btn btn-dark btn-block" type="submit">Unsubscribe</button>
+           </form>`}
+    </section>`,
+  });
+}
+
+function subscribersPage({ user, subscribers, enabled }) {
+  const count = (s) => subscribers.filter((x) => x.status === s).length;
+  const label = { active: 'Subscribed', pending: 'Not confirmed', unsubscribed: 'Unsubscribed' };
+  const rows = subscribers.map((s) => `<tr>
+      <td>${esc(s.email)}</td>
+      <td><span class="badge ${s.status === 'active' ? 'published' : 'draft'}">${label[s.status] || esc(s.status)}</span></td>
+      <td class="small">${timeTag(s.confirmed_at || s.created_at)}</td>
+      <td class="dash-actions"><form method="post" action="/admin/subscribers/${s.id}/delete" data-msg="${esc(`Remove ${s.email} from the list?`)}" onsubmit="return confirm(this.dataset.msg)">
+        <button class="btn btn-ghost btn-sm danger" type="submit">Remove</button></form></td>
+    </tr>`).join('');
+  const body = `<header class="page-head"><p class="eyebrow">Author</p><h1 class="display">Subscribers</h1>
+      <p class="muted">${count('active')} subscribed · ${count('pending')} waiting to confirm · ${count('unsubscribed')} unsubscribed</p></header>
+    ${enabled ? '' : `<p class="form-error">Email sending is off, so the signup form is hidden and nothing is sent. Set <code>RESEND_API_KEY</code> and <code>MAIL_FROM</code> on the server to turn it on.</p>`}
+    ${subscribers.length ? `<div class="table-wrap"><table class="dash"><thead><tr><th>Email</th><th>Status</th><th>Since</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : '<p class="muted center pad">No subscribers yet. The signup form is in the site footer and at the end of every article.</p>'}`;
+  return layout({ user, title: 'Subscribers', body, bodyClass: 'admin' });
+}
+
 function backupPage({ user, error }) {
   return layout({
     user, title: 'Backup & Restore', bodyClass: 'auth-page',
@@ -346,7 +416,7 @@ function dashboard({ user, articles }) {
       <td class="dash-thumb">${a.hero_image ? `<img src="${esc(a.hero_image)}" alt="">` : ''}</td>
       <td><a class="dash-title" href="/article/${esc(a.slug)}">${esc(a.title)}</a><div class="muted small">${esc(a.category)}</div></td>
       <td><span class="badge ${a.status}">${a.status === 'published' ? 'Published' : 'Draft'}</span></td>
-      <td class="small">${a.published_at ? timeTag(a.published_at) : `Edited ${timeTag(a.updated_at)}`}</td>
+      <td class="small">${a.published_at ? timeTag(a.published_at) : `Edited ${timeTag(a.updated_at)}`}${a.emailed_at ? `<div class="muted">Emailed to ${a.emailed_count}</div>` : ''}</td>
       <td class="dash-actions">
         <a class="btn btn-ghost btn-sm" href="/admin/edit/${a.id}">Edit</a>
         <button class="btn btn-ghost btn-sm danger" data-delete="${a.id}" data-title="${esc(a.title)}">Delete</button>
@@ -360,10 +430,10 @@ function dashboard({ user, articles }) {
 }
 
 /* ---------- Editor ---------- */
-function editorPage({ user, article, mode = 'article' }) {
+function editorPage({ user, article, mode = 'article', notify = 0 }) {
   const a = article || { id: '', title: '', dek: '', category: 'NFL', hero_image: '', hero_caption: '', body_html: '', status: 'draft' };
   const isAbout = mode === 'about';
-  const data = JSON.stringify({ mode, id: a.id || null, status: a.status, bodyHtml: a.body_html, slug: a.slug || '' }).replace(/</g, '\\u003c');
+  const data = JSON.stringify({ mode, id: a.id || null, status: a.status, bodyHtml: a.body_html, slug: a.slug || '', notify }).replace(/</g, '\\u003c');
 
   const body = `
   <form class="editor-shell" id="editorForm" autocomplete="off">
@@ -449,4 +519,7 @@ function notFound({ user }) {
   });
 }
 
-module.exports = { layout, home, sectionPage, articlePage, aboutPage, loginPage, setupPage, accountPage, backupPage, dashboard, editorPage, notFound };
+module.exports = {
+  layout, home, sectionPage, articlePage, aboutPage, loginPage, setupPage, accountPage, backupPage,
+  noticePage, unsubscribePage, subscribersPage, dashboard, editorPage, notFound,
+};

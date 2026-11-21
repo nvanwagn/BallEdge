@@ -487,6 +487,9 @@
     if (b) {
       const target = b.dataset.save === 'publish' ? 'published' : 'draft';
       if (!isAbout && target === 'draft' && status === 'published' && !confirm('Unpublish this article? It will be hidden from the site until you publish it again.')) return;
+      // First publish emails subscribers, so make that explicit.
+      if (!isAbout && target === 'published' && status !== 'published' && data.notify > 0 &&
+          !confirm(`Publish and email this article to ${data.notify} subscriber${data.notify === 1 ? '' : 's'}? The email can't be unsent.`)) return;
       const out = await save(target);
       if (!out) return;
       if (isAbout) { location.href = '/about'; return; }

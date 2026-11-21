@@ -56,6 +56,8 @@ Set these as environment variables:
 | `SITE_TIMEZONE`  | `America/New_York` | Time zone for article dates                                                 |
 | `SITE_URL`       | *(auto-detected)*  | Public URL, e.g. `https://balledge.com`. Required for link previews to work |
 | `TWITTER_HANDLE` | *(none)*           | X/Twitter username credited on preview cards                                |
+| `RESEND_API_KEY` | *(none)*           | [Resend](https://resend.com) API key. With `MAIL_FROM`, turns on email subscriptions |
+| `MAIL_FROM`      | *(none)*           | Sender for subscriber emails, e.g. `BallEdge <news@balledge.net>`            |
 
 ---
 
@@ -84,6 +86,18 @@ Always serve over **HTTPS** in production. The session cookie is marked `Secure`
 - Previews only work once the site is at a public URL with `SITE_URL` set. X can't reach `localhost`.
 - Articles without a hero image fall back to `public/img/share-default.jpg`.
 - X caches previews for about a week, so a changed hero image may take time to update there.
+
+---
+
+## Email subscriptions
+
+Readers sign up in the footer or at the end of any article. They get a confirmation email first (double opt-in), then one email each time an article is published for the first time. Edits and republishing never send again. Every email has an unsubscribe link and one-click unsubscribe headers.
+
+- Turned on by setting `RESEND_API_KEY` and `MAIL_FROM`. Without them the form is hidden and nothing is sent.
+- Emails go through Resend's HTTP API because many hosts, Railway included, block outgoing SMTP. Verify your sending domain in Resend first.
+- Before the first Publish of an article, the editor asks you to confirm how many subscribers it will email.
+- **Menu → Subscribers** lists everyone and lets you remove people. The dashboard shows how many people each article was emailed to.
+- Restoring a backup adds its subscribers but never removes existing ones.
 
 ---
 

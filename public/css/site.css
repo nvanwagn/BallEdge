@@ -501,3 +501,18 @@ textarea.title-input { font-family: var(--serif-display); font-weight: 800; font
   .toolbar { top: 108px; }
   .w-img.fig-inset { float: none; width: 100%; margin: 1.4em 0; }
 }
+
+/* ---------- Email signup ---------- */
+.signup { width: 100%; max-width: 460px; display: grid; gap: 8px; text-align: center; }
+.signup-head { font-family: var(--serif-display); font-weight: 700; font-size: 19px; }
+.signup-sub { margin: 0; font-size: 14px; }
+.signup-row { display: flex; gap: 8px; }
+.signup-row input { flex: 1; min-width: 0; padding: 11px 12px; font: inherit; font-size: 15px; border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--white); color: var(--ink); }
+.signup-row input:focus { outline: none; border-color: var(--carbon); box-shadow: 0 0 0 3px rgba(240,207,0,.35); }
+.signup .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.signup-footer { margin: 14px 0 6px; }
+.signup-footer .signup-head { color: #ddd9cd; font-size: 15px; font-family: var(--sans); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.signup-footer .signup-row input { border-color: #3a3935; background: #262624; color: #f1eee6; }
+.signup-article { max-width: none; margin: 28px 0 0; padding: 24px; background: var(--white); border: 1px solid var(--rule); border-top: 4px solid var(--gold); }
+.signup-article .signup-sub { color: var(--muted); }
+@media (max-width: 520px) { .signup-row { flex-direction: column; } }

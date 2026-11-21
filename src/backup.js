@@ -164,7 +164,8 @@ async function saveSafetyCopy() {
   await Promise.all(old.map((f) => fsp.rm(path.join(SAFETY_DIR, f), { force: true })));
 }
 
-// Replaces every article, setting and the author account with the backup's, and adds its images.
+// Replaces every article, setting and the author account with the backup's, and adds its images
+// and any subscribers not already on the list.
 // All sessions end, so everyone signs in again with the backup's username and password.
 async function restoreBackup(archive) {
   await fsp.mkdir(TMP_DIR, { recursive: true });
@@ -188,6 +189,14 @@ async function restoreBackup(archive) {
           const theirs = new Set(db.prepare(`PRAGMA bak.table_info(${t})`).all().map((c) => c.name));
           const cols = live.filter((c) => theirs.has(c)).map((c) => `"${c}"`).join(', ');
           db.exec(`INSERT INTO main.${t} (${cols}) SELECT ${cols} FROM bak.${t}`);
+        }
+        // Subscribers are merged, never replaced: restoring an older or local backup
+        // must not drop people who signed up on the live site.
+        if (info.tables.includes('subscribers')) {
+          const theirs = new Set(db.prepare('PRAGMA bak.table_info(subscribers)').all().map((c) => c.name));
+          const cols = db.prepare('PRAGMA main.table_info(subscribers)').all().map((c) => c.name)
+            .filter((c) => c !== 'id' && theirs.has(c)).map((c) => `"${c}"`).join(', ');
+          db.exec(`INSERT OR IGNORE INTO main.subscribers (${cols}) SELECT ${cols} FROM bak.subscribers`);
         }
         db.exec('COMMIT');
       } catch (err) { db.exec('ROLLBACK'); throw err; }
